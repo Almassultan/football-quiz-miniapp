@@ -216,7 +216,6 @@ async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export default function HomePage() {
-  const [mounted, setMounted] = useState(false);
   const [screen, setScreen] = useState<Screen>('loading');
   const [me, setMe] = useState<MeResponse | null>(null);
   const [game, setGame] = useState<StartResponse | null>(null);
@@ -225,7 +224,7 @@ export default function HomePage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [remainingTimeMs, setRemainingTimeMs] = useState<number>(0);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string>('');
 
   const finishingRef = useRef(false);
 
@@ -277,12 +276,6 @@ export default function HomePage() {
   }, [game, loadLeaderboard, loadMe]);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!mounted) return;
-
     initTelegramWebApp();
 
     void (async () => {
@@ -295,7 +288,7 @@ export default function HomePage() {
         setScreen('home');
       }
     })();
-  }, [mounted, loadMe]);
+  }, [loadMe]);
 
   useEffect(() => {
     if (screen !== 'quiz' || !game) return;
@@ -351,37 +344,8 @@ export default function HomePage() {
       if (!game || !currentQuestion || busy) return;
       if (currentQuestion.selectedSlot !== null) return;
 
-      const previousGame = game;
-      const previousIndex = currentIndex;
-
-      const updatedQuestions = game.questions.map((question) =>
-        question.questionOrder === currentQuestion.questionOrder
-          ? { ...question, selectedSlot }
-          : question
-      );
-
-      const optimisticAnsweredQuestions = Math.min(
-        game.questions.length,
-        game.attempt.answeredQuestions + 1
-      );
-
-      const nextIndex = getNextUnansweredIndex(updatedQuestions);
-
       setBusy(true);
       setError('');
-
-      setGame({
-        ...game,
-        attempt: {
-          ...game.attempt,
-          answeredQuestions: optimisticAnsweredQuestions,
-        },
-        questions: updatedQuestions,
-      });
-
-      if (nextIndex !== previousIndex) {
-        setCurrentIndex(nextIndex);
-      }
 
       try {
         const data = await apiFetch<AnswerResponse>('/api/game/answer', {
@@ -393,16 +357,19 @@ export default function HomePage() {
           }),
         });
 
-        setGame((prev) => {
-          if (!prev) return prev;
+        const updatedQuestions = game.questions.map((question) =>
+          question.questionOrder === currentQuestion.questionOrder
+            ? { ...question, selectedSlot }
+            : question
+        );
 
-          return {
-            ...prev,
-            attempt: {
-              ...prev.attempt,
-              answeredQuestions: data.answeredQuestions,
-            },
-          };
+        setGame({
+          ...game,
+          attempt: {
+            ...game.attempt,
+            answeredQuestions: data.answeredQuestions,
+          },
+          questions: updatedQuestions,
         });
 
         setRemainingTimeMs(data.remainingTimeMs);
@@ -411,10 +378,9 @@ export default function HomePage() {
           await handleFinish();
           return;
         }
-      } catch (error) {
-        setGame(previousGame);
-        setCurrentIndex(previousIndex);
 
+        setCurrentIndex(getNextUnansweredIndex(updatedQuestions));
+      } catch (error) {
         const message = readErrorMessage(error);
         setError(message);
 
@@ -428,22 +394,12 @@ export default function HomePage() {
         setBusy(false);
       }
     },
-    [busy, currentIndex, currentQuestion, game, handleFinish]
+    [busy, currentQuestion, game, handleFinish]
   );
 
   const displayName = me?.user.username
     ? `@${me.user.username}`
     : me?.user.firstName || 'Игрок';
-
-  if (!mounted) {
-    return (
-      <main className="min-h-screen bg-black text-white">
-        <div className="mx-auto flex min-h-screen w-full max-w-3xl items-center justify-center px-4 py-6">
-          Загрузка...
-        </div>
-      </main>
-    );
-  }
 
   return (
     <main className="min-h-screen bg-black text-white">
